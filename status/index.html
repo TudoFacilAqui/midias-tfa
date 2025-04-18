@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Status Instagram</title>
+  <style>
+    /* Seu CSS original aqui (mantido do seu arquivo) */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      background: #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+      font-family: sans-serif;
+    }
+    .status-overlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.9);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .status-viewer {
+      width: 100%;
+      max-width: 300px;
+      height: 90vh;
+      position: relative;
+    }
+    .status-container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      transition: transform 0.3s ease;
+    }
+    .status-slide {
+      min-width: 100%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background-color: #000;
+    }
+    .status-media {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+    .progress-container {
+      position: absolute;
+      top: 10px; left: 10px; right: 10px;
+      display: flex;
+      gap: 4px;
+      z-index: 20;
+    }
+    .progress-bar {
+      height: 2px;
+      background: rgba(255,255,255,0.3);
+      flex-grow: 1;
+      border-radius: 2px;
+    }
+    .progress {
+      height: 100%;
+      background: white;
+      width: 0%;
+      border-radius: 2px;
+    }
+    .status-header {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      padding: 15px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.5), transparent);
+      z-index: 10;
+    }
+    .user-info {
+      display: flex;
+      align-items: center;
+      color: white;
+    }
+    .user-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      margin-right: 10px;
+      border: 2px solid #C13584;
+    }
+    .status-time {
+      font-size: 14px;
+      color: rgba(255,255,255,0.7);
+    }
+    .close-btn {
+      color: white;
+      font-size: 24px;
+      cursor: pointer;
+      background: rgba(0,0,0,0.3);
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="status-overlay" id="statusOverlay">
+    <div class="status-viewer">
+      <div class="status-container" id="statusContainer"></div>
+      <div class="progress-container" id="progressContainer"></div>
+      <div class="status-header">
+        <div class="user-info">
+          <img src="https://i.imgur.com/d7Dwc3E.jpg" class="user-avatar" />
+          <div>
+            <div>Seu Stories</div>
+            <div class="status-time" id="statusTime">Agora mesmo</div>
+          </div>
+        </div>
+        <div class="close-btn" id="closeBtn">×</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const statusContainer = document.getElementById("statusContainer");
+    const progressContainer = document.getElementById("progressContainer");
+    const statusTime = document.getElementById("statusTime");
+    const closeBtn = document.getElementById("closeBtn");
+    const statusOverlay = document.getElementById("statusOverlay");
+
+    let currentIndex = 0;
+    let isDragging = false;
+    let startX = 0;
+    let currentTranslate = 0;
+    let progressIntervals = [];
+    let videoElements = [];
+
+    // 🟡 ESTE SCRIPT BUSCA OS ARQUIVOS AUTOMATICAMENTE DO GITHUB
+    const statusData = [];
+    fetch("https://api.github.com/repos/TudoFacilAqui/midias-tfa/contents/status")
+      .then(res => res.json())
+      .then(arquivos => {
+        arquivos.forEach(arquivo => {
+          const ext = arquivo.name.split('.').pop().toLowerCase();
+          const isVideo = ['mp4', 'webm'].includes(ext);
+          const isImage = ['jpg', 'jpeg', 'png'].includes(ext);
+
+          if (isVideo || isImage) {
+            statusData.push({
+              type: isVideo ? 'video' : 'image',
+              url: arquivo.download_url,
+              duration: isVideo ? 15000 : 5000
+            });
+          }
+        });
+
+        initStatus();
+      })
+      .catch(err => console.error("Erro ao buscar mídias:", err));
+
+    function initStatus() {
+      statusContainer.innerHTML = '';
+      progressContainer.innerHTML = '';
+      videoElements = [];
+
+      statusData.forEach((media, index) => {
+        const slide = document.createElement('div');
+        slide.className = 'status-slide';
+        slide.dataset.index = index;
+
+        const mediaElement = document.createElement(media.type === 'video' ? 'video' : 'img');
+        mediaElement.className = 'status-media';
+        mediaElement.src = media.url;
+
+        if (media.type === 'video') {
+          mediaElement.loop = false;
+          mediaElement.muted = true;
+          mediaElement.playsInline = true;
+          mediaElement.autoplay = false;
+          mediaElement.controls = false;
+          videoElements.push(mediaElement);
+        }
+
+        slide.appendChild(mediaElement);
+        statusContainer.appendChild(slide);
+
+        const progressBar = document.createElement('div');
+        progressBar.className = 'progress-bar';
+
+        const progress = document.createElement('div');
+        progress.className = 'progress';
+        progress.dataset.index = index;
+
+        progressBar.appendChild(progress);
+        progressContainer.appendChild(progressBar);
+      });
+
+      showStatus(0);
+      setupDragEvents();
+    }
+
+    function showStatus(index) {
+      currentIndex = index;
+      statusTime.textContent = "Agora mesmo";
+      statusContainer.style.transform = `translateX(-${index * 100}%)`;
+
+      resetAllProgressBars();
+      pauseAllVideos();
+
+      const currentMedia = statusContainer.children[index].querySelector('.status-media');
+      if (statusData[index].type === 'video') {
+        currentMedia.currentTime = 0;
+        currentMedia.play().catch(e => console.log("Erro ao reproduzir vídeo:", e));
+      }
+
+      startProgress(index, statusData[index].duration);
+    }
+
+    function resetAllProgressBars() {
+      progressIntervals.forEach(clearInterval);
+      progressIntervals = [];
+
+      document.querySelectorAll('.progress').forEach(progress => {
+        progress.style.width = '0%';
+      });
+    }
+
+    function pauseAllVideos() {
+      videoElements.forEach(video => video.pause());
+    }
+
+    function startProgress(index, duration) {
+      const progress = document.querySelector(`.progress[data-index="${index}"]`);
+      let width = 0;
+      const increment = 100 / (duration / 50);
+
+      const interval = setInterval(() => {
+        if (width >= 100) {
+          clearInterval(interval);
+          nextStatus();
+        } else {
+          width += increment;
+          progress.style.width = width + '%';
+        }
+      }, 50);
+
+      progressIntervals.push(interval);
+    }
+
+    function nextStatus() {
+      if (currentIndex < statusData.length - 1) {
+        showStatus(currentIndex + 1);
+      } else {
+        closeStatus();
+      }
+    }
+
+    function prevStatus() {
+      if (currentIndex > 0) {
+        showStatus(currentIndex - 1);
+      }
+    }
+
+    function closeStatus() {
+      statusOverlay.style.display = "none";
+      resetAllProgressBars();
+      pauseAllVideos();
+    }
+
+    function setupDragEvents() {
+      statusContainer.addEventListener('mousedown', startDrag);
+      document.addEventListener('mousemove', drag);
+      document.addEventListener('mouseup', endDrag);
+
+      statusContainer.addEventListener('touchstart', startDragTouch, { passive: false });
+      statusContainer.addEventListener('touchmove', dragTouch, { passive: false });
+      statusContainer.addEventListener('touchend', endDragTouch);
+    }
+
+    function startDrag(e) {
+      isDragging = true;
+      startX = e.clientX;
+      currentTranslate = -currentIndex * 100;
+      statusContainer.style.transition = 'none';
+      resetAllProgressBars();
+      pauseAllVideos();
+      e.preventDefault();
+    }
+
+    function drag(e) {
+      if (!isDragging) return;
+      const x = e.clientX;
+      const diff = x - startX;
+      const newTranslate = currentTranslate + (diff / statusContainer.offsetWidth) * 100;
+      statusContainer.style.transform = `translateX(${newTranslate}%)`;
+      e.preventDefault();
+    }
+
+    function endDrag(e) {
+      if (!isDragging) return;
+      isDragging = false;
+      const x = e.clientX;
+      const diff = x - startX;
+      const threshold = statusContainer.offsetWidth * 0.1;
+
+      statusContainer.style.transition = 'transform 0.3s ease';
+      if (diff > threshold) prevStatus();
+      else if (diff < -threshold) nextStatus();
+      else showStatus(currentIndex);
+    }
+
+    function startDragTouch(e) {
+      isDragging = true;
+      startX = e.touches[0].clientX;
+      currentTranslate = -currentIndex * 100;
+      statusContainer.style.transition = 'none';
+      resetAllProgressBars();
+      pauseAllVideos();
+      e.preventDefault();
+    }
+
+    function dragTouch(e) {
+      if (!isDragging) return;
+      const x = e.touches[0].clientX;
+      const diff = x - startX;
+      const newTranslate = currentTranslate + (diff / statusContainer.offsetWidth) * 100;
+      statusContainer.style.transform = `translateX(${newTranslate}%)`;
+      e.preventDefault();
+    }
+
+    function endDragTouch(e) {
+      if (!isDragging) return;
+      isDragging = false;
+      const endX = e.changedTouches[0].clientX;
+      const diff = endX - startX;
+      const threshold = statusContainer.offsetWidth * 0.1;
+
+      statusContainer.style.transition = 'transform 0.3s ease';
+      if (diff > threshold) prevStatus();
+      else if (diff < -threshold) nextStatus();
+      else showStatus(currentIndex);
+    }
+
+    closeBtn.addEventListener("click", closeStatus);
+    statusOverlay.addEventListener("click", (e) => {
+      if (e.target === statusOverlay) closeStatus();
+    });
+  </script>
+</body>
+</html>
